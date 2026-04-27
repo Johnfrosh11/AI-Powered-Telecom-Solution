@@ -45,6 +45,13 @@ public class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
 
         b.HasMany(e => e.UserRoles).WithOne()
             .HasForeignKey("UserId").OnDelete(DeleteBehavior.Cascade);
+
+        b.OwnsOne(e => e.NotificationPrefs, nb =>
+        {
+            nb.ToTable("UserNotificationPreferences");
+            nb.WithOwner().HasForeignKey("UserId");
+            nb.HasKey("UserId");
+        });
     }
 }
 
@@ -83,6 +90,15 @@ public class PermissionConfiguration : IEntityTypeConfiguration<PermissionEntry>
         b.HasKey(e => e.Id);
         b.Property(e => e.Code).HasMaxLength(100).IsRequired();
         b.HasIndex(e => e.Code).IsUnique();
+    }
+}
+
+public class RolePermissionAssignmentConfiguration : IEntityTypeConfiguration<RolePermissionAssignment>
+{
+    public void Configure(EntityTypeBuilder<RolePermissionAssignment> b)
+    {
+        b.ToTable("RolePermissions");
+        b.HasKey(e => new { e.RoleId, e.PermissionId });
     }
 }
 
@@ -210,9 +226,13 @@ public class MessageConfiguration : IEntityTypeConfiguration<Message>
         b.ToTable("Messages");
         b.HasKey(e => e.Id);
         b.HasIndex(e => e.SentAt);
-        b.Property(e => e.Content).HasMaxLength(4000);
+        b.Property(e => e.ContentOriginal).HasMaxLength(4000);
         b.Property(e => e.ContentEnglish).HasMaxLength(4000);
-        b.Property(e => e.MessageType).HasConversion<string>().HasMaxLength(50);
+        b.Property(e => e.Type).HasConversion<string>().HasMaxLength(50);
+        // Ignore computed alias properties
+        b.Ignore(e => e.Content);
+        b.Ignore(e => e.MessageType);
+        b.Ignore(e => e.IsFromCustomer);
     }
 }
 

@@ -12,6 +12,7 @@ using NaijaShield.Application;
 using NaijaShield.Infrastructure;
 using NaijaShield.Api.Hubs;
 using NaijaShield.Api.Middleware;
+using NaijaShield.Infrastructure.Persistence.Seed;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -179,5 +180,13 @@ app.UseHangfireDashboard("/hangfire", new DashboardOptions
 });
 
 app.MapHealthChecks("/health");
+
+// ── Database seed (dev + staging) ─────────────────────────────────────────────
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Staging"))
+{
+    using var scope = app.Services.CreateScope();
+    var seeder = scope.ServiceProvider.GetRequiredService<DataSeeder>();
+    await seeder.SeedAsync();
+}
 
 await app.RunAsync();

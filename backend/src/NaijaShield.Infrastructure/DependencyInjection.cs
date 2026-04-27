@@ -48,6 +48,7 @@ public static class DependencyInjection
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IAuditLogger, AuditLoggerService>();
+        services.AddScoped<IPasswordHasher, BcryptPasswordHasher>();
         services.AddSingleton<IPermissionCache, PermissionCacheService>();
         services.AddScoped<IFeatureFlagService, FeatureFlagService>();
 
@@ -88,6 +89,9 @@ public static class DependencyInjection
         services.AddScoped<ICbnAntiFraudClient, CbnAntiFraudClient>();
         services.AddScoped<IEfccReportingClient, EfccReportingClient>();
         services.AddScoped<INimcNinClient, NimcNinClient>();
+
+        // Seeder
+        services.AddScoped<NaijaShield.Infrastructure.Persistence.Seed.DataSeeder>();
 
         return services;
     }
