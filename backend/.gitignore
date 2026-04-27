@@ -1,0 +1,43 @@
+## NaijaShield AI — Build outputs
+bin/
+obj/
+
+## IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.userprefs
+
+## Packages (NuGet)
+packages/
+*.nupkg
+.nuget/
+
+## Secrets / Local config
+appsettings.Local.json
+appsettings.Secrets.json
+secrets.json
+.env
+.env.*
+!.env.example
+
+## Logs
+logs/
+*.log
+
+## Test results
+TestResults/
+coverage/
+*.trx
+*.coveragexml
+
+## Docker
+docker-compose.override.yml
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Migration bundles
+efbundle

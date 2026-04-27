@@ -1,0 +1,24 @@
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+COPY ["src/NaijaShield.BackgroundJobs/NaijaShield.BackgroundJobs.csproj", "src/NaijaShield.BackgroundJobs/"]
+COPY ["src/NaijaShield.Application/NaijaShield.Application.csproj", "src/NaijaShield.Application/"]
+COPY ["src/NaijaShield.Domain/NaijaShield.Domain.csproj", "src/NaijaShield.Domain/"]
+COPY ["src/NaijaShield.Infrastructure/NaijaShield.Infrastructure.csproj", "src/NaijaShield.Infrastructure/"]
+
+RUN dotnet restore "src/NaijaShield.BackgroundJobs/NaijaShield.BackgroundJobs.csproj"
+
+COPY . .
+RUN dotnet publish "src/NaijaShield.BackgroundJobs/NaijaShield.BackgroundJobs.csproj" -c Release -o /app/publish \
+    --no-restore /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+WORKDIR /app
+
+RUN addgroup --system --gid 1001 naijashield && \
+    adduser --system --uid 1001 --ingroup naijashield naijashield
+
+COPY --from=build /app/publish .
+USER naijashield
+
+ENTRYPOINT ["dotnet", "NaijaShield.BackgroundJobs.dll"]

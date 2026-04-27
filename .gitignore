@@ -1,0 +1,58 @@
+# ── Build outputs ────────────────────────────────────────────────────────────
+bin/
+obj/
+out/
+publish/
+
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.userosscache
+*.sln.docstates
+
+# ── AI tool configs ───────────────────────────────────────────────────────────
+.claude/
+.cursor/
+.copilot/
+
+# ── NuGet ─────────────────────────────────────────────────────────────────────
+packages/
+*.nupkg
+*.snupkg
+.nuget/
+nuget.config.local
+
+# ── Secrets / Local config ────────────────────────────────────────────────────
+appsettings.Local.json
+appsettings.Secrets.json
+appsettings.Development.json
+secrets.json
+.env
+.env.*
+!.env.example
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Test results ──────────────────────────────────────────────────────────────
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Node (future frontend) ────────────────────────────────────────────────────
+node_modules/
+dist/
+.next/
+.nuxt/

@@ -1,0 +1,106 @@
+version: '3.9'
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: naijashield-api
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=NaijaShieldDb;User=sa;Password=NaijaShield_Dev@2024!;TrustServerCertificate=True
+      - ConnectionStrings__Redis=redis:6379
+      - ConnectionStrings__AzureStorage=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tiqnqEZnAuMVsuFq==;BlobEndpoint=http://azurite:10000/devstoreaccount1
+      - Jwt__SecretKey=dev-secret-key-replace-in-prod-32chars!
+      - Jwt__Issuer=naijashield
+      - Jwt__Audience=naijashield-api
+      - AzureOpenAI__Endpoint=${AZURE_OPENAI_ENDPOINT:-https://placeholder.openai.azure.com/}
+      - AzureOpenAI__ApiKey=${AZURE_OPENAI_KEY:-dev-placeholder}
+      - AzureOpenAI__DeploymentName=gpt-4o
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      azurite:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - naijashield
+
+  jobs:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.jobs
+    container_name: naijashield-jobs
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=NaijaShieldDb;User=sa;Password=NaijaShield_Dev@2024!;TrustServerCertificate=True
+      - ConnectionStrings__Redis=redis:6379
+      - ConnectionStrings__AzureStorage=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tiqnqEZnAuMVsuFq==;BlobEndpoint=http://azurite:10000/devstoreaccount1
+      - Jwt__SecretKey=dev-secret-key-replace-in-prod-32chars!
+      - AzureOpenAI__Endpoint=${AZURE_OPENAI_ENDPOINT:-https://placeholder.openai.azure.com/}
+      - AzureOpenAI__ApiKey=${AZURE_OPENAI_KEY:-dev-placeholder}
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - naijashield
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: naijashield-sql
+    ports:
+      - "1433:1433"
+    environment:
+      SA_PASSWORD: "NaijaShield_Dev@2024!"
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'NaijaShield_Dev@2024!' -C -Q 'SELECT 1'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - naijashield
+
+  redis:
+    image: redis:7-alpine
+    container_name: naijashield-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - naijashield
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: naijashield-azurite
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    volumes:
+      - azurite_data:/data
+    command: azurite --loose --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+    networks:
+      - naijashield
+
+volumes:
+  sqlserver_data:
+  redis_data:
+  azurite_data:
+
+networks:
+  naijashield:
+    driver: bridge

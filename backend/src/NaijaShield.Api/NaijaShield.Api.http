@@ -1,0 +1,6 @@
+@NaijaShield.Api_HostAddress = http://localhost:5265
+
+GET {{NaijaShield.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
