@@ -45,5 +45,6 @@ public class FeatureFlagConfiguration : IEntityTypeConfiguration<FeatureFlag>
         b.HasKey(e => e.Id);
         b.HasIndex(e => new { e.TenantId, e.Key }).IsUnique();
         b.Property(e => e.Key).HasMaxLength(100).IsRequired();
+        b.Property(e => e.RolloutPercentage).HasPrecision(5, 2);
     }
 }

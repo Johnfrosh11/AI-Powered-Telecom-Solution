@@ -2,6 +2,7 @@ using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NaijaShield.Infrastructure.Persistence;
 using Testcontainers.MsSql;
@@ -37,6 +38,24 @@ public class NaijaShieldWebApplicationFactory : WebApplicationFactory<Program>, 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+
+        // Override configuration so health checks + EF both use the test container
+        builder.ConfigureAppConfiguration(config =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = _sqlContainer.GetConnectionString(),
+                ["ConnectionStrings:Redis"] = "localhost:6379,abortConnect=false",
+                ["Jwt:SecretKey"] = "test-secret-key-at-least-32-characters-long",
+                ["Jwt:Issuer"] = "https://test.local",
+                ["Jwt:Audience"] = "naijashield-test",
+                ["AzureOpenAI:Endpoint"] = "https://placeholder.cognitiveservices.azure.com/",
+                ["AzureOpenAI:ApiKey"] = "test-key",
+                ["AzureOpenAI:DeploymentName"] = "gpt-4o",
+                ["Azure:Storage:ConnectionString"] = "UseDevelopmentStorage=true",
+                ["WEBHOOK_SECRET"] = "test-webhook-secret",
+            });
+        });
 
         builder.ConfigureServices(services =>
         {

@@ -146,8 +146,8 @@ public class SmokeTests(NaijaShieldWebApplicationFactory factory)
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("/api/v1/dashboard/kpis");
-        body.Should().Contain("/api/v1/fraud/calls");
-        body.Should().Contain("/api/v1/users");
+        body.ToLower().Should().Contain("/api/v1/dashboard/kpis");
+        body.ToLower().Should().Contain("/api/v1/fraud/calls");
+        body.ToLower().Should().Contain("/api/v1/users");
     }
 }

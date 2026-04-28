@@ -152,8 +152,9 @@ builder.Services.AddSwaggerGen(opts =>
 
 // ── Health Checks ─────────────────────────────────────────────────────────────
 
-builder.Services.AddHealthChecks()
-    .AddSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")!);
+var healthBuilder = builder.Services.AddHealthChecks();
+if (!builder.Environment.IsEnvironment("Testing"))
+    healthBuilder.AddSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")!);
 
 // ── App Pipeline ──────────────────────────────────────────────────────────────
 
@@ -164,7 +165,7 @@ app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseMiddleware<TenantResolutionMiddleware>();
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>

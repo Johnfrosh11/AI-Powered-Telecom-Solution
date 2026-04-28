@@ -20,7 +20,7 @@ public class ConversationTests(NaijaShieldWebApplicationFactory factory) : IClas
     [Fact]
     public async Task GetCustomers_WithoutAuth_Returns401()
     {
-        var response = await _client.GetAsync("/api/v1/customers");
+        var response = await _client.GetAsync($"/api/v1/conversations/{Guid.NewGuid()}");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

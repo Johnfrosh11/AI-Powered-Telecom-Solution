@@ -16,6 +16,11 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         b.Property(e => e.MaskedMsisdn).HasMaxLength(20).IsRequired();
         b.Property(e => e.Status).HasConversion<string>().HasMaxLength(50);
         b.Property(e => e.FraudRiskScore).HasPrecision(5, 4);
+        b.Property(e => e.LifetimeValue).HasPrecision(18, 2);
+        b.Property(e => e.LifetimeValueKobo).HasPrecision(18, 2);
+
+        b.HasMany(e => e.Interactions).WithOne()
+            .HasForeignKey(e => e.CustomerId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
@@ -32,9 +37,10 @@ public class ConversationConfiguration : IEntityTypeConfiguration<Conversation>
         b.Property(e => e.Language).HasMaxLength(10);
         b.Property(e => e.Summary).HasMaxLength(2000);
         b.Property(e => e.CustomerMsisdn).HasMaxLength(20);
+        b.Property(e => e.SentimentScore).HasPrecision(5, 4);
 
         b.HasMany(e => e.Messages).WithOne()
-            .HasForeignKey("ConversationId").OnDelete(DeleteBehavior.Cascade);
+            .HasForeignKey(e => e.ConversationId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
@@ -51,5 +57,21 @@ public class MessageConfiguration : IEntityTypeConfiguration<Message>
         b.Ignore(e => e.Content);
         b.Ignore(e => e.MessageType);
         b.Ignore(e => e.IsFromCustomer);
+    }
+}
+
+public class InteractionConfiguration : IEntityTypeConfiguration<Interaction>
+{
+    public void Configure(EntityTypeBuilder<Interaction> b)
+    {
+        b.ToTable("Interactions");
+        b.HasKey(e => e.Id);
+        b.HasIndex(e => e.CustomerId);
+        b.HasIndex(e => e.TenantId);
+        b.Property(e => e.Channel).HasConversion<string>().HasMaxLength(50);
+        b.Property(e => e.Direction).HasMaxLength(20);
+        b.Property(e => e.DetectedLanguage).HasMaxLength(10);
+        b.Property(e => e.SentimentScore).HasPrecision(5, 4);
+        b.Property(e => e.Status).HasConversion<string>().HasMaxLength(50);
     }
 }

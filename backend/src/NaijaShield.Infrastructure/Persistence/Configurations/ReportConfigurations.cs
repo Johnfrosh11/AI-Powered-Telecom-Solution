@@ -31,3 +31,16 @@ public class PromptTemplateConfiguration : IEntityTypeConfiguration<PromptTempla
         b.Property(e => e.SuccessRate).HasPrecision(5, 4);
     }
 }
+
+public class ModelDeploymentConfiguration : IEntityTypeConfiguration<ModelDeployment>
+{
+    public void Configure(EntityTypeBuilder<ModelDeployment> b)
+    {
+        b.ToTable("ModelDeployments");
+        b.HasKey(e => e.Id);
+        b.HasIndex(e => e.TenantId);
+        b.Property(e => e.Precision).HasPrecision(5, 4);
+        b.Property(e => e.Recall).HasPrecision(5, 4);
+        b.Property(e => e.F1Score).HasPrecision(5, 4);
+    }
+}

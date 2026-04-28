@@ -33,7 +33,7 @@ public class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
         b.HasIndex(e => e.EntraObjectId);
 
         b.HasMany(e => e.UserRoles).WithOne()
-            .HasForeignKey("UserId").OnDelete(DeleteBehavior.Cascade);
+            .HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.Cascade);
 
         b.OwnsOne(e => e.NotificationPrefs, nb =>
         {
@@ -49,9 +49,7 @@ public class UserRoleConfiguration : IEntityTypeConfiguration<UserRole>
     public void Configure(EntityTypeBuilder<UserRole> b)
     {
         b.ToTable("UserRoles");
-        b.HasKey("UserId", "RoleId");
-        b.Property<Guid>("UserId");
-        b.Property<Guid>("RoleId");
+        b.HasKey(e => new { e.UserId, e.RoleId });
     }
 }
 
@@ -65,7 +63,7 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
         b.HasIndex(e => new { e.TenantId, e.Name }).IsUnique();
 
         b.HasMany(e => e.RolePermissions).WithOne()
-            .HasForeignKey("RoleId").OnDelete(DeleteBehavior.Cascade);
+            .HasForeignKey(e => e.RoleId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 

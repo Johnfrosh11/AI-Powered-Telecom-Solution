@@ -1,5 +1,4 @@
-#!/usr/bin/env pwsh
-#Requires -Version 7.0
+#!/usr/bin/env powershell
 <#
 .SYNOPSIS
     NaijaShield AI — Demo-ready seed script.
