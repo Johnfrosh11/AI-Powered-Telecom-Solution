@@ -41,5 +41,8 @@ recurringJobManager.AddOrUpdate<DataRetentionPurgerJob>(
 recurringJobManager.AddOrUpdate<CacheWarmerJob>(
     "cache-warmer", j => j.ExecuteAsync(CancellationToken.None), "*/5 * * * *"); // every 5min
 
+recurringJobManager.AddOrUpdate<CdrIngestionJob>(
+    "cdr-ingestion", j => j.ExecuteAsync(CancellationToken.None), "*/2 * * * *"); // every 2min
+
 await host.RunAsync();
 

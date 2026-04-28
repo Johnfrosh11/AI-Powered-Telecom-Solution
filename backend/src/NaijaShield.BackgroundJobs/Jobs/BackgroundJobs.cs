@@ -1,7 +1,10 @@
 using Hangfire;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NaijaShield.Application.Common.Interfaces;
+using NaijaShield.Application.Features.Fraud;
+using NaijaShield.Domain.Constants;
 using NaijaShield.Infrastructure.Persistence;
 
 namespace NaijaShield.BackgroundJobs.Jobs;
@@ -149,7 +152,118 @@ public class DataRetentionPurgerJob(
     }
 }
 
-// ── Cache Warmer ──────────────────────────────────────────────────────────────
+// ── CDR Ingestion Worker ──────────────────────────────────────────────────────
+
+/// <summary>
+/// Polls Azure Service Bus for unprocessed CDR (Call Detail Record) messages published by
+/// telecom switches and feeds them into the AI fraud-detection pipeline.
+/// Each message carries caller MSISDN, receiver MSISDN, duration, and a blob URI pointing
+/// to the recorded audio file.
+/// </summary>
+public class CdrIngestionJob(
+    AppDbContext db,
+    IAzureBlobStorage blobStorage,
+    IMediator mediator,
+    ILogger<CdrIngestionJob> logger)
+{
+    private const int BatchSize = 20;
+
+    [AutomaticRetry(Attempts = 3)]
+    [DisableConcurrentExecution(120)]
+    public async Task ExecuteAsync(CancellationToken ct)
+    {
+        // Fetch unprocessed CDRs surfaced as OutboxMessages of type "cdr.received"
+        var pending = await db.OutboxMessages
+            .Where(m => m.Type == "cdr.received" && m.ProcessedAt == null)
+            .OrderBy(m => m.CreatedAt)
+            .Take(BatchSize)
+            .ToListAsync(ct);
+
+        if (pending.Count == 0)
+        {
+            logger.LogDebug("CDR ingestion: no pending records");
+            return;
+        }
+
+        logger.LogInformation("CDR ingestion: processing {Count} records", pending.Count);
+        var processed = 0;
+
+        foreach (var msg in pending)
+        {
+            try
+            {
+                var cdr = System.Text.Json.JsonSerializer.Deserialize<CdrMessage>(msg.Payload);
+                if (cdr is null)
+                {
+                    msg.Error = "Payload deserialization returned null";
+                    msg.RetryCount++;
+                    continue;
+                }
+
+                // Download audio from blob storage
+                Stream audioStream;
+                try
+                {
+                    var parts = cdr.AudioBlobUri.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    var container = parts.Length >= 2 ? parts[^2] : BlobContainers.CallRecordings;
+                    var blobName = parts.Length >= 1 ? parts[^1] : cdr.AudioBlobUri;
+                    audioStream = await blobStorage.DownloadAsync(container, blobName, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "CDR {Id}: audio download failed — skipping", msg.Id);
+                    msg.Error = ex.Message;
+                    msg.RetryCount++;
+                    continue;
+                }
+
+                // Push through the full AI pipeline
+                var command = new IngestCallAudioCommand(
+                    cdr.TenantId,
+                    cdr.CallerMsisdn,
+                    cdr.ReceiverMsisdn,
+                    cdr.StartedAt,
+                    TimeSpan.FromSeconds(cdr.DurationSeconds),
+                    audioStream,
+                    cdr.SuspectedLanguage ?? "en");
+
+                var result = await mediator.Send(command, ct);
+
+                if (result.IsSuccess)
+                {
+                    msg.ProcessedAt = DateTime.UtcNow;
+                    processed++;
+                    logger.LogInformation("CDR {Id}: ingested → ScamCall {ScamCallId}", msg.Id, result.Value);
+                }
+                else
+                {
+                    msg.Error = result.Error ?? "Unknown error";
+                    msg.RetryCount++;
+                    logger.LogWarning("CDR {Id}: pipeline returned failure — {Error}", msg.Id, result.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                msg.Error = ex.Message;
+                msg.RetryCount++;
+                logger.LogError(ex, "CDR {Id}: unexpected error during ingestion", msg.Id);
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("CDR ingestion: {Processed}/{Total} records processed", processed, pending.Count);
+    }
+
+    /// <summary>Shape of the CDR payload stored in OutboxMessage.Payload.</summary>
+    private sealed record CdrMessage(
+        Guid TenantId,
+        string CallerMsisdn,
+        string ReceiverMsisdn,
+        DateTime StartedAt,
+        int DurationSeconds,
+        string AudioBlobUri,
+        string? SuspectedLanguage);
+}
 
 public class CacheWarmerJob(
     AppDbContext db,
