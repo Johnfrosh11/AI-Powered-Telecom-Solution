@@ -39,7 +39,7 @@ $BackendDir    = Join-Path $Root "backend"
 $ApiProject    = Join-Path $BackendDir "src/NaijaShield.Api"
 $InfraProject  = Join-Path $BackendDir "src/NaijaShield.Infrastructure"
 
-$SqlConnString = "Server=localhost,1433;Database=NaijaShieldDev;User Id=sa;Password=NaijaShield@Dev1;TrustServerCertificate=True"
+$SqlConnString = "Server=tcp:ai-telecom-solution.database.windows.net,1433;Initial Catalog=ai-telecom-dev-db;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication=`"Active Directory Default`";"
 $ApiBaseUrl    = "http://localhost:5000"
 
 # ── Colours ───────────────────────────────────────────────────────────────────

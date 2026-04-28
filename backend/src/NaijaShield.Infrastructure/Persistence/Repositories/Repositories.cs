@@ -340,6 +340,9 @@ internal sealed class AuditLogRepository(AppDbContext db) : IAuditLogRepository
     public async Task AddAsync(AuditLog log, CancellationToken ct) =>
         await db.AuditLogs.AddAsync(log, ct);
 
+    public async Task<AuditLog?> GetByIdAsync(Guid id, CancellationToken ct) =>
+        await db.AuditLogs.FirstOrDefaultAsync(a => a.Id == id, ct);
+
     public async Task<IReadOnlyList<AuditLog>> QueryAsync(
         Guid tenantId, Guid? actorId, string? action,
         DateTime? from, DateTime? to, string? sensitivity,

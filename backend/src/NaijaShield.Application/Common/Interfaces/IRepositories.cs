@@ -132,6 +132,7 @@ public interface IPromptTemplateRepository
 public interface IAuditLogRepository
 {
     Task AddAsync(AuditLog log, CancellationToken ct = default);
+    Task<AuditLog?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<AuditLog>> QueryAsync(
         Guid tenantId, Guid? actorId, string? action,
         DateTime? from, DateTime? to, string? sensitivity,

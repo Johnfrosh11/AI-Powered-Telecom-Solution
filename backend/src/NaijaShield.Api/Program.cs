@@ -190,3 +190,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Staging"))
 }
 
 await app.RunAsync();
+
+// Expose Program class for integration tests
+public partial class Program { }
+

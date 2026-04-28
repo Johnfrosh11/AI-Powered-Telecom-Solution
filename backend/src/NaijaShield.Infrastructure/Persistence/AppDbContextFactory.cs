@@ -15,9 +15,12 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
     {
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
 
-        // Use a stub connection string for migration generation — not executed at design time.
+        // Prefer env var or fall back to Azure dev DB for migration tooling.
+        var connString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
+            ?? "Server=tcp:ai-telecom-solution.database.windows.net,1433;Initial Catalog=ai-telecom-dev-db;Persist Security Info=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication=Active Directory Default;";
+
         optionsBuilder.UseSqlServer(
-            "Server=(localdb)\\mssqllocaldb;Database=NaijaShieldDev;Trusted_Connection=True;",
+            connString,
             sql =>
             {
                 sql.EnableRetryOnFailure(3);
