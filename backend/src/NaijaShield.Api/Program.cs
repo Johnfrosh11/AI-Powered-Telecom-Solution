@@ -66,7 +66,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 return Task.CompletedTask;
             }
         };
-    });
+    })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+        ApiKeyAuthenticationHandler.SchemeName, _ => { });
 
 // Register the permission handler so [Authorize(Policy="...")] works
 builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();

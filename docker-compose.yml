@@ -1,0 +1,95 @@
+version: "3.9"
+
+services:
+
+  # ── SQL Server ─────────────────────────────────────────────────────────────
+  sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      SA_PASSWORD: "NaijaShield@Dev1"
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P NaijaShield@Dev1 -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── Redis (distributed cache + SignalR backplane) ──────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  # ── Azurite (local Azure Storage emulator) ─────────────────────────────────
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    ports:
+      - "10000:10000"   # Blob
+      - "10001:10001"   # Queue
+      - "10002:10002"   # Table
+    volumes:
+      - azuritedata:/data
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+
+  # ── NaijaShield API ────────────────────────────────────────────────────────
+  api:
+    build:
+      context: backend
+      dockerfile: src/NaijaShield.Api/Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: >
+        Server=sql,1433;Database=NaijaShieldDev;User Id=sa;
+        Password=NaijaShield@Dev1;TrustServerCertificate=True
+      ConnectionStrings__Redis: "redis:6379"
+      Jwt__SecretKey: "naijashield-dev-secret-key-change-in-prod-32chars"
+      Jwt__Issuer: "https://naijashield.local"
+      Jwt__Audience: "naijashield-api"
+      Azure__Storage__ConnectionString: >
+        DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;
+        AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tiqRTXgAA==;
+        BlobEndpoint=http://azurite:10000/devstoreaccount1;
+      AllowedOrigins__0: "http://localhost:3000"
+      WEBHOOK_SECRET: "dev-webhook-secret"
+    depends_on:
+      sql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      azurite:
+        condition: service_started
+    restart: on-failure
+
+  # ── Background Jobs (Hangfire) ──────────────────────────────────────────────
+  jobs:
+    build:
+      context: backend
+      dockerfile: src/NaijaShield.BackgroundJobs/Dockerfile
+    environment:
+      ConnectionStrings__DefaultConnection: >
+        Server=sql,1433;Database=NaijaShieldDev;User Id=sa;
+        Password=NaijaShield@Dev1;TrustServerCertificate=True
+      ConnectionStrings__Redis: "redis:6379"
+      Azure__Storage__ConnectionString: >
+        DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;
+        AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tiqRTXgAA==;
+        BlobEndpoint=http://azurite:10000/devstoreaccount1;
+    depends_on:
+      sql:
+        condition: service_healthy
+    restart: on-failure
+
+volumes:
+  sqldata:
+  azuritedata:
