@@ -6,13 +6,10 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Hangfire;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using NaijaShield.Application;
-using NaijaShield.Domain.Constants;
 using NaijaShield.Infrastructure;
-using NaijaShield.Api.Authorization;
 using NaijaShield.Api.Hubs;
 using NaijaShield.Api.Middleware;
 using NaijaShield.Infrastructure.Persistence.Seed;
@@ -66,19 +63,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 return Task.CompletedTask;
             }
         };
-    })
-    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
-        ApiKeyAuthenticationHandler.SchemeName, _ => { });
+    });
 
-// Register the permission handler so [Authorize(Policy="...")] works
-builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
-
-builder.Services.AddAuthorization(opts =>
-{
-    // Dynamically register one policy per permission code
-    foreach (var code in Permissions.All)
-        opts.AddPolicy(code, p => p.AddRequirements(new PermissionRequirement(code)));
-});
+builder.Services.AddAuthorization();
 
 // ── Application + Infrastructure ─────────────────────────────────────────────
 
