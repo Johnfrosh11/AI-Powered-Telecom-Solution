@@ -13,6 +13,8 @@ using NaijaShield.Infrastructure;
 using NaijaShield.Api.Hubs;
 using NaijaShield.Api.Middleware;
 using NaijaShield.Infrastructure.Persistence.Seed;
+using NaijaShield.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -82,7 +84,9 @@ builder.Services.AddSignalR();
 
 builder.Services.AddHangfire(cfg =>
     cfg.UseSqlServerStorage(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddHangfireServer();
+// Do NOT add AddHangfireServer() here — the BackgroundJobs service owns job processing.
+// The API only hosts the dashboard; running the server here causes assembly-load failures
+// when Hangfire tries to deserialize job types from NaijaShield.BackgroundJobs.
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 
@@ -146,6 +150,17 @@ if (!builder.Environment.IsEnvironment("Testing"))
 // ── App Pipeline ──────────────────────────────────────────────────────────────
 
 var app = builder.Build();
+
+// ── Migrations-only mode (CI/CD) ──────────────────────────────────────────────
+// When the deploy pipeline runs a short-lived container to apply DB migrations,
+// it sets RUN_MIGRATIONS_ONLY=true. Apply migrations and exit — skip the server.
+if (Environment.GetEnvironmentVariable("RUN_MIGRATIONS_ONLY") == "true")
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+    return;
+}
 
 app.UseSerilogRequestLogging();
 app.UseMiddleware<SecurityHeadersMiddleware>();

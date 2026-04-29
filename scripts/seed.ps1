@@ -20,14 +20,23 @@
 .PARAMETER FakeCallCount
     Number of fake ScamCall records to generate (default: 50)
 
+.PARAMETER LiveDb
+    Target the live Azure SQL database instead of a local Docker container.
+    Skips Docker Compose and the local SQL Server health check.
+    Uses 'sqlcmd' with Azure AD Default authentication for data inserts.
+    Requires: az login (Azure CLI signed in as a user with db_owner on ai-telecom-dev-db)
+
 .EXAMPLE
-    ./scripts/seed.ps1
-    ./scripts/seed.ps1 -SkipDocker -FakeCallCount 100
+    ./scripts/seed.ps1                                  # local Docker
+    ./scripts/seed.ps1 -SkipDocker -FakeCallCount 100  # local, no Docker restart
+    ./scripts/seed.ps1 -LiveDb                         # run against Azure SQL
+    ./scripts/seed.ps1 -LiveDb -SkipMigrations         # Azure SQL, skip migrations
 #>
 
 param(
     [switch]$SkipDocker,
     [switch]$SkipMigrations,
+    [switch]$LiveDb,
     [int]$FakeCallCount = 50
 )
 
@@ -39,7 +48,18 @@ $BackendDir    = Join-Path $Root "backend"
 $ApiProject    = Join-Path $BackendDir "src/NaijaShield.Api"
 $InfraProject  = Join-Path $BackendDir "src/NaijaShield.Infrastructure"
 
-$SqlConnString = "Server=tcp:ai-telecom-solution.database.windows.net,1433;Initial Catalog=ai-telecom-dev-db;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication=`"Active Directory Default`";"
+# -LiveDb uses the live Azure SQL DB; otherwise target the local Docker container
+if ($LiveDb) {
+    $SqlConnString  = "Server=tcp:ai-telecom-solution.database.windows.net,1433;Initial Catalog=ai-telecom-dev-db;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication=`"Active Directory Default`";"
+    $SqlServer      = "tcp:ai-telecom-solution.database.windows.net,1433"
+    $SqlDatabase    = "ai-telecom-dev-db"
+    $SkipDocker     = $true   # no local Docker needed against live DB
+} else {
+    $SqlConnString  = "Server=localhost,1433;Database=NaijaShieldDev;User Id=sa;Password=NaijaShield@Dev1;Encrypt=False;"
+    $SqlServer      = $null   # use docker exec path
+    $SqlDatabase    = "NaijaShieldDev"
+}
+
 $ApiBaseUrl    = "http://localhost:5000"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -66,29 +86,53 @@ if (-not $SkipDocker) {
 
 Write-Step "Waiting for SQL Server to be healthy..."
 
-$maxAttempts = 30
-$attempt     = 0
-$ready       = $false
+if ($LiveDb) {
+    # For Azure SQL, do a lightweight sqlcmd connectivity test
+    $maxAttempts = 5
+    $attempt     = 0
+    $ready       = $false
 
-while (-not $ready -and $attempt -lt $maxAttempts) {
-    $attempt++
-    try {
-        $result = docker exec naijashield-sql /opt/mssql-tools/bin/sqlcmd `
-            -S localhost -U sa -P 'NaijaShield@Dev1' `
-            -Q "SELECT 1" -l 5 2>&1
+    while (-not $ready -and $attempt -lt $maxAttempts) {
+        $attempt++
+        try {
+            $result = sqlcmd -S $SqlServer -d $SqlDatabase -G -Q "SELECT 1" -l 10 2>&1
+            if ($result -match "1" -or $result -match "---") { $ready = $true }
+        } catch { }
 
-        if ($result -match "1 rows affected" -or $result -match "---") {
-            $ready = $true
+        if (-not $ready) {
+            Write-Host "  Attempt $attempt/$maxAttempts — waiting 3s..." -ForegroundColor Gray
+            Start-Sleep -Seconds 3
         }
-    } catch { }
-
-    if (-not $ready) {
-        Write-Host "  Attempt $attempt/$maxAttempts — waiting 3s..." -ForegroundColor Gray
-        Start-Sleep -Seconds 3
     }
+
+    if (-not $ready) { Write-Fail "Cannot connect to Azure SQL. Ensure you are signed in: az login" }
+} else {
+    # Local Docker SQL Server health check
+    $maxAttempts = 30
+    $attempt     = 0
+    $ready       = $false
+
+    while (-not $ready -and $attempt -lt $maxAttempts) {
+        $attempt++
+        try {
+            $result = docker exec naijashield-sql /opt/mssql-tools/bin/sqlcmd `
+                -S localhost -U sa -P 'NaijaShield@Dev1' `
+                -Q "SELECT 1" -l 5 2>&1
+
+            if ($result -match "1 rows affected" -or $result -match "---") {
+                $ready = $true
+            }
+        } catch { }
+
+        if (-not $ready) {
+            Write-Host "  Attempt $attempt/$maxAttempts — waiting 3s..." -ForegroundColor Gray
+            Start-Sleep -Seconds 3
+        }
+    }
+
+    if (-not $ready) { Write-Fail "SQL Server did not become ready after $($maxAttempts * 3) seconds" }
 }
 
-if (-not $ready) { Write-Fail "SQL Server did not become ready after $($maxAttempts * 3) seconds" }
 Write-Ok "SQL Server is healthy"
 
 # ── Step 3: EF Core Migrations ────────────────────────────────────────────────
@@ -219,12 +263,23 @@ VALUES (
 
 $sqlBatch = $insertSql -join "`n"
 $tmpSqlFile = Join-Path $env:TEMP "naijashield_seed_calls.sql"
-Set-Content -Path $tmpSqlFile -Value "USE NaijaShieldDev;`n$sqlBatch"
 
-docker exec -i naijashield-sql /opt/mssql-tools/bin/sqlcmd `
-    -S localhost -U sa -P 'NaijaShield@Dev1' `
-    -i /dev/stdin < $tmpSqlFile 2>&1 | ForEach-Object {
-    if ($_ -match "error|Error") { Write-Warn $_ } else { }
+if ($LiveDb) {
+    # Write SQL without USE statement — database is set in the sqlcmd connection
+    Set-Content -Path $tmpSqlFile -Value $sqlBatch
+
+    sqlcmd -S $SqlServer -d $SqlDatabase -G -i $tmpSqlFile 2>&1 | ForEach-Object {
+        if ($_ -match "error|Error") { Write-Warn $_ }
+    }
+} else {
+    # Local Docker: pipe through docker exec sqlcmd
+    Set-Content -Path $tmpSqlFile -Value "USE NaijaShieldDev;`n$sqlBatch"
+
+    docker exec -i naijashield-sql /opt/mssql-tools/bin/sqlcmd `
+        -S localhost -U sa -P 'NaijaShield@Dev1' `
+        -i /dev/stdin < $tmpSqlFile 2>&1 | ForEach-Object {
+        if ($_ -match "error|Error") { Write-Warn $_ } else { }
+    }
 }
 
 Remove-Item $tmpSqlFile -Force -ErrorAction SilentlyContinue

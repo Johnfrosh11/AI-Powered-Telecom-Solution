@@ -124,7 +124,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: backend
-          file: backend/src/NaijaShield.Api/Dockerfile
+          file: backend/docker/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
@@ -136,7 +136,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: backend
-          file: backend/src/NaijaShield.BackgroundJobs/Dockerfile
+          file: backend/docker/Dockerfile.jobs
           push: true
           tags: |
             ${{ env.ACR_LOGIN_SERVER }}/naijashield-jobs:sha-${{ github.sha }}
@@ -178,7 +178,10 @@ jobs:
           az containerapp update \
             --name naijashield-api-staging \
             --resource-group ${{ secrets.AZURE_RG_STAGING }} \
-            --image ${{ secrets.ACR_REGISTRY }}/naijashield-api:sha-${{ github.sha }}
+            --image ${{ secrets.ACR_REGISTRY }}/naijashield-api:sha-${{ github.sha }} \
+            --set-env-vars \
+              "AllowedOrigins__0=https://app.naijashield.ng" \
+              "AllowedOrigins__1=${{ secrets.FRONTEND_URL_STAGING }}"
 
       - name: Update Container App — Jobs (staging)
         run: |
@@ -227,7 +230,10 @@ jobs:
           az containerapp update \
             --name naijashield-api-prod \
             --resource-group ${{ secrets.AZURE_RG_PROD }} \
-            --image ${{ secrets.ACR_REGISTRY }}/naijashield-api:sha-${{ github.sha }}
+            --image ${{ secrets.ACR_REGISTRY }}/naijashield-api:sha-${{ github.sha }} \
+            --set-env-vars \
+              "AllowedOrigins__0=https://app.naijashield.ng" \
+              "AllowedOrigins__1=${{ secrets.FRONTEND_URL_PROD }}"
 
       - name: Update Container App — Jobs (production)
         run: |
