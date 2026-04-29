@@ -152,7 +152,7 @@ app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseMiddleware<TenantResolutionMiddleware>();
 
-if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing") || app.Environment.IsEnvironment("Staging"))
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>

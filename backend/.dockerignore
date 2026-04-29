@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/TestResults/
+**/.vs/
+**/.vscode/
+**/node_modules/
+**/*.user
+**/.git/
+**/.gitignore
+**/docker/
+**/tests/
