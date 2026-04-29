@@ -12,7 +12,7 @@ trigger:
     include: [main]
 
 variables:
-  - group: naijashield-vars          # ACR_REGISTRY, AZURE_RG_*, SQL_CONN_*, FRONTEND_URL_*
+  - group: naijashield-vars          # ACR_REGISTRY, AZURE_RG, SQL_CONN, FRONTEND_URL
   - name: DOTNET_VERSION
     value: '9.0.x'
   - name: SOLUTION
@@ -23,6 +23,13 @@ variables:
     value: '$(ACR_REGISTRY)/naijashield-jobs'
   - name: IMAGE_TAG
     value: 'sha-$(Build.SourceVersion)'
+  # Actual Azure resource names
+  - name: RESOURCE_GROUP
+    value: 'ODL-Covenant-2200446'
+  - name: CONTAINERAPP_API
+    value: 'naijashield-api-dev'
+  - name: CONTAINERAPP_JOBS
+    value: 'naijashield-jobs-dev'
 
 # ── Stage 1: Build & Test ──────────────────────────────────────────────────────
 stages:
@@ -126,30 +133,30 @@ stages:
                 $(IMAGE_TAG)
                 latest
 
-# ── Stage 3: Deploy — Staging ─────────────────────────────────────────────────
-  - stage: DeployStaging
-    displayName: Deploy — Staging
+# ── Stage 3: Deploy ───────────────────────────────────────────────────────────
+  - stage: Deploy
+    displayName: Deploy
     dependsOn: DockerBuildPush
     jobs:
-      - deployment: Staging
-        displayName: Deploy to staging
+      - deployment: DeployDev
+        displayName: Deploy to dev
         pool:
           vmImage: ubuntu-latest
-        environment: staging             # create in Pipelines > Environments
+        environment: dev
         strategy:
           runOnce:
             deploy:
               steps:
                 - task: AzureCLI@2
-                  displayName: Run DB migrations (staging)
+                  displayName: Run DB migrations
                   inputs:
                     azureSubscription: naijashield-azure-rm
                     scriptType: bash
                     scriptLocation: inlineScript
                     inlineScript: |
                       az container create \
-                        --resource-group $(AZURE_RG_STAGING) \
-                        --name naijashield-migrate-staging \
+                        --resource-group $(RESOURCE_GROUP) \
+                        --name naijashield-migrate \
                         --image $(IMAGE_API):$(IMAGE_TAG) \
                         --registry-server $(ACR_REGISTRY) \
                         --registry-username $(ACR_USERNAME) \
@@ -158,115 +165,38 @@ stages:
                           ASPNETCORE_ENVIRONMENT=Staging \
                           RUN_MIGRATIONS_ONLY=true \
                         --secure-environment-variables \
-                          ConnectionStrings__DefaultConnection="$(SQL_CONN_STAGING)" \
+                          ConnectionStrings__DefaultConnection="$(SQL_CONN)" \
                         --restart-policy Never \
                         --os-type Linux
 
                 - task: AzureCLI@2
-                  displayName: Update Container App — API (staging)
+                  displayName: Update Container App — API
                   inputs:
                     azureSubscription: naijashield-azure-rm
                     scriptType: bash
                     scriptLocation: inlineScript
                     inlineScript: |
                       az containerapp update \
-                        --name naijashield-api-staging \
-                        --resource-group $(AZURE_RG_STAGING) \
+                        --name $(CONTAINERAPP_API) \
+                        --resource-group $(RESOURCE_GROUP) \
                         --image $(IMAGE_API):$(IMAGE_TAG) \
                         --set-env-vars \
                           "AllowedOrigins__0=https://app.naijashield.ng" \
-                          "AllowedOrigins__1=$(FRONTEND_URL_STAGING)"
+                          "AllowedOrigins__1=$(FRONTEND_URL)"
 
                 - task: AzureCLI@2
-                  displayName: Update Container App — Jobs (staging)
+                  displayName: Update Container App — Jobs
                   inputs:
                     azureSubscription: naijashield-azure-rm
                     scriptType: bash
                     scriptLocation: inlineScript
                     inlineScript: |
                       az containerapp update \
-                        --name naijashield-jobs-staging \
-                        --resource-group $(AZURE_RG_STAGING) \
+                        --name $(CONTAINERAPP_JOBS) \
+                        --resource-group $(RESOURCE_GROUP) \
                         --image $(IMAGE_JOBS):$(IMAGE_TAG)
 
                 - script: |
                     sleep 30
-                    curl --fail https://api-staging.naijashield.ai/health || exit 1
-                  displayName: Health check — staging
-
-# ── Stage 4: Deploy — Production ─────────────────────────────────────────────
-  - stage: DeployProduction
-    displayName: Deploy — Production
-    dependsOn: DeployStaging
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-    jobs:
-      - deployment: Production
-        displayName: Deploy to production
-        pool:
-          vmImage: ubuntu-latest
-        environment: production          # add approval gate in Pipelines > Environments
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - task: AzureCLI@2
-                  displayName: Run DB migrations (production)
-                  inputs:
-                    azureSubscription: naijashield-azure-rm
-                    scriptType: bash
-                    scriptLocation: inlineScript
-                    inlineScript: |
-                      az container create \
-                        --resource-group $(AZURE_RG_PROD) \
-                        --name naijashield-migrate-prod \
-                        --image $(IMAGE_API):$(IMAGE_TAG) \
-                        --registry-server $(ACR_REGISTRY) \
-                        --registry-username $(ACR_USERNAME) \
-                        --registry-password $(ACR_PASSWORD) \
-                        --environment-variables \
-                          ASPNETCORE_ENVIRONMENT=Production \
-                          RUN_MIGRATIONS_ONLY=true \
-                        --secure-environment-variables \
-                          ConnectionStrings__DefaultConnection="$(SQL_CONN_PROD)" \
-                        --restart-policy Never \
-                        --os-type Linux
-
-                - task: AzureCLI@2
-                  displayName: Update Container App — API (production)
-                  inputs:
-                    azureSubscription: naijashield-azure-rm
-                    scriptType: bash
-                    scriptLocation: inlineScript
-                    inlineScript: |
-                      az containerapp update \
-                        --name naijashield-api-prod \
-                        --resource-group $(AZURE_RG_PROD) \
-                        --image $(IMAGE_API):$(IMAGE_TAG) \
-                        --set-env-vars \
-                          "AllowedOrigins__0=https://app.naijashield.ng" \
-                          "AllowedOrigins__1=$(FRONTEND_URL_PROD)"
-
-                - task: AzureCLI@2
-                  displayName: Update Container App — Jobs (production)
-                  inputs:
-                    azureSubscription: naijashield-azure-rm
-                    scriptType: bash
-                    scriptLocation: inlineScript
-                    inlineScript: |
-                      az containerapp update \
-                        --name naijashield-jobs-prod \
-                        --resource-group $(AZURE_RG_PROD) \
-                        --image $(IMAGE_JOBS):$(IMAGE_TAG) \
-                        --set-env-vars \
-                          "AllowedOrigins__0=https://app.naijashield.ng" \
-                          "AllowedOrigins__1=$(FRONTEND_URL_PROD)"
-
-                - script: |
-                    sleep 30
                     curl --fail https://api.naijashield.ai/health || exit 1
-                  displayName: Health check — production
-
-                - script: |
-                    git tag "release-$(date +'%Y%m%d-%H%M')-$(Build.SourceVersion)"
-                    git push --tags
-                  displayName: Tag release
+                  displayName: Health check
