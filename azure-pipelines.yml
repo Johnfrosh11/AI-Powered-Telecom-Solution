@@ -39,8 +39,7 @@ stages:
 
       - job: UnitTests
         displayName: Build & Unit Tests
-        pool:
-          vmImage: ubuntu-latest
+        pool: NaijaShield-Self-Hosted
         steps:
           - task: UseDotNet@2
             displayName: Install .NET $(DOTNET_VERSION)
@@ -71,8 +70,7 @@ stages:
       - job: IntegrationTests
         displayName: Integration Tests (Testcontainers)
         dependsOn: UnitTests
-        pool:
-          vmImage: ubuntu-latest
+        pool: NaijaShield-Self-Hosted
         steps:
           - task: UseDotNet@2
             displayName: Install .NET $(DOTNET_VERSION)
@@ -106,8 +104,7 @@ stages:
     jobs:
       - job: Docker
         displayName: Build & push images
-        pool:
-          vmImage: ubuntu-latest
+        pool: NaijaShield-Self-Hosted
         steps:
           - task: Docker@2
             displayName: Build & push API image
@@ -140,8 +137,7 @@ stages:
     jobs:
       - deployment: DeployDev
         displayName: Deploy to dev
-        pool:
-          vmImage: ubuntu-latest
+        pool: NaijaShield-Self-Hosted
         environment: dev
         strategy:
           runOnce:
