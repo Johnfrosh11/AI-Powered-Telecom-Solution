@@ -1,0 +1,272 @@
+# NaijaShield AI — Azure DevOps Pipeline
+# Stages: Build & Test → Docker Build & Push → Deploy Staging → Deploy Production
+#
+# Prerequisites (run scripts/setup-azdo.ps1 once):
+#   Service connections : naijashield-azure-rm  (Azure Resource Manager)
+#                         naijashield-acr        (Docker Registry → ACR)
+#   Variable group      : naijashield-vars       (in Pipelines > Library)
+#   Environments        : staging, production    (production has approval gate)
+
+trigger:
+  branches:
+    include: [main]
+
+variables:
+  - group: naijashield-vars          # ACR_REGISTRY, AZURE_RG_*, SQL_CONN_*, FRONTEND_URL_*
+  - name: DOTNET_VERSION
+    value: '9.0.x'
+  - name: SOLUTION
+    value: 'backend/NaijaShield.sln'
+  - name: IMAGE_API
+    value: '$(ACR_REGISTRY)/naijashield-api'
+  - name: IMAGE_JOBS
+    value: '$(ACR_REGISTRY)/naijashield-jobs'
+  - name: IMAGE_TAG
+    value: 'sha-$(Build.SourceVersion)'
+
+# ── Stage 1: Build & Test ──────────────────────────────────────────────────────
+stages:
+  - stage: BuildAndTest
+    displayName: Build & Test
+    jobs:
+
+      - job: UnitTests
+        displayName: Build & Unit Tests
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: UseDotNet@2
+            displayName: Install .NET $(DOTNET_VERSION)
+            inputs:
+              version: $(DOTNET_VERSION)
+
+          - script: dotnet restore $(SOLUTION)
+            displayName: Restore
+
+          - script: dotnet build $(SOLUTION) -c Release --no-restore
+            displayName: Build (Release)
+
+          - script: |
+              dotnet test backend/tests/NaijaShield.UnitTests/ \
+                -c Release --no-build \
+                --logger "trx;LogFileName=unit-results.xml" \
+                --collect:"XPlat Code Coverage"
+            displayName: Unit Tests
+
+          - task: PublishTestResults@2
+            displayName: Publish unit test results
+            condition: always()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '**/unit-results.xml'
+              testRunTitle: Unit Tests
+
+      - job: IntegrationTests
+        displayName: Integration Tests (Testcontainers)
+        dependsOn: UnitTests
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: UseDotNet@2
+            displayName: Install .NET $(DOTNET_VERSION)
+            inputs:
+              version: $(DOTNET_VERSION)
+
+          - script: dotnet restore $(SOLUTION)
+            displayName: Restore
+
+          - script: dotnet build $(SOLUTION) -c Release --no-restore
+            displayName: Build (Release)
+
+          - script: |
+              dotnet test backend/tests/NaijaShield.IntegrationTests/ \
+                -c Release --no-build \
+                --logger "trx;LogFileName=integration-results.xml"
+            displayName: Integration Tests
+
+          - task: PublishTestResults@2
+            displayName: Publish integration test results
+            condition: always()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '**/integration-results.xml'
+              testRunTitle: Integration Tests
+
+# ── Stage 2: Docker Build & Push ──────────────────────────────────────────────
+  - stage: DockerBuildPush
+    displayName: Docker Build & Push to ACR
+    dependsOn: BuildAndTest
+    jobs:
+      - job: Docker
+        displayName: Build & push images
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: Docker@2
+            displayName: Build & push API image
+            inputs:
+              containerRegistry: naijashield-acr
+              repository: naijashield-api
+              command: buildAndPush
+              Dockerfile: backend/docker/Dockerfile
+              buildContext: backend
+              tags: |
+                $(IMAGE_TAG)
+                latest
+
+          - task: Docker@2
+            displayName: Build & push BackgroundJobs image
+            inputs:
+              containerRegistry: naijashield-acr
+              repository: naijashield-jobs
+              command: buildAndPush
+              Dockerfile: backend/docker/Dockerfile.jobs
+              buildContext: backend
+              tags: |
+                $(IMAGE_TAG)
+                latest
+
+# ── Stage 3: Deploy — Staging ─────────────────────────────────────────────────
+  - stage: DeployStaging
+    displayName: Deploy — Staging
+    dependsOn: DockerBuildPush
+    jobs:
+      - deployment: Staging
+        displayName: Deploy to staging
+        pool:
+          vmImage: ubuntu-latest
+        environment: staging             # create in Pipelines > Environments
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: Run DB migrations (staging)
+                  inputs:
+                    azureSubscription: naijashield-azure-rm
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az container create \
+                        --resource-group $(AZURE_RG_STAGING) \
+                        --name naijashield-migrate-staging \
+                        --image $(IMAGE_API):$(IMAGE_TAG) \
+                        --registry-server $(ACR_REGISTRY) \
+                        --registry-username $(ACR_USERNAME) \
+                        --registry-password $(ACR_PASSWORD) \
+                        --environment-variables \
+                          ASPNETCORE_ENVIRONMENT=Staging \
+                          RUN_MIGRATIONS_ONLY=true \
+                        --secure-environment-variables \
+                          ConnectionStrings__DefaultConnection="$(SQL_CONN_STAGING)" \
+                        --restart-policy Never \
+                        --os-type Linux
+
+                - task: AzureCLI@2
+                  displayName: Update Container App — API (staging)
+                  inputs:
+                    azureSubscription: naijashield-azure-rm
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp update \
+                        --name naijashield-api-staging \
+                        --resource-group $(AZURE_RG_STAGING) \
+                        --image $(IMAGE_API):$(IMAGE_TAG) \
+                        --set-env-vars \
+                          "AllowedOrigins__0=https://app.naijashield.ng" \
+                          "AllowedOrigins__1=$(FRONTEND_URL_STAGING)"
+
+                - task: AzureCLI@2
+                  displayName: Update Container App — Jobs (staging)
+                  inputs:
+                    azureSubscription: naijashield-azure-rm
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp update \
+                        --name naijashield-jobs-staging \
+                        --resource-group $(AZURE_RG_STAGING) \
+                        --image $(IMAGE_JOBS):$(IMAGE_TAG)
+
+                - script: |
+                    sleep 30
+                    curl --fail https://api-staging.naijashield.ai/health || exit 1
+                  displayName: Health check — staging
+
+# ── Stage 4: Deploy — Production ─────────────────────────────────────────────
+  - stage: DeployProduction
+    displayName: Deploy — Production
+    dependsOn: DeployStaging
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: Production
+        displayName: Deploy to production
+        pool:
+          vmImage: ubuntu-latest
+        environment: production          # add approval gate in Pipelines > Environments
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: Run DB migrations (production)
+                  inputs:
+                    azureSubscription: naijashield-azure-rm
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az container create \
+                        --resource-group $(AZURE_RG_PROD) \
+                        --name naijashield-migrate-prod \
+                        --image $(IMAGE_API):$(IMAGE_TAG) \
+                        --registry-server $(ACR_REGISTRY) \
+                        --registry-username $(ACR_USERNAME) \
+                        --registry-password $(ACR_PASSWORD) \
+                        --environment-variables \
+                          ASPNETCORE_ENVIRONMENT=Production \
+                          RUN_MIGRATIONS_ONLY=true \
+                        --secure-environment-variables \
+                          ConnectionStrings__DefaultConnection="$(SQL_CONN_PROD)" \
+                        --restart-policy Never \
+                        --os-type Linux
+
+                - task: AzureCLI@2
+                  displayName: Update Container App — API (production)
+                  inputs:
+                    azureSubscription: naijashield-azure-rm
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp update \
+                        --name naijashield-api-prod \
+                        --resource-group $(AZURE_RG_PROD) \
+                        --image $(IMAGE_API):$(IMAGE_TAG) \
+                        --set-env-vars \
+                          "AllowedOrigins__0=https://app.naijashield.ng" \
+                          "AllowedOrigins__1=$(FRONTEND_URL_PROD)"
+
+                - task: AzureCLI@2
+                  displayName: Update Container App — Jobs (production)
+                  inputs:
+                    azureSubscription: naijashield-azure-rm
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp update \
+                        --name naijashield-jobs-prod \
+                        --resource-group $(AZURE_RG_PROD) \
+                        --image $(IMAGE_JOBS):$(IMAGE_TAG) \
+                        --set-env-vars \
+                          "AllowedOrigins__0=https://app.naijashield.ng" \
+                          "AllowedOrigins__1=$(FRONTEND_URL_PROD)"
+
+                - script: |
+                    sleep 30
+                    curl --fail https://api.naijashield.ai/health || exit 1
+                  displayName: Health check — production
+
+                - script: |
+                    git tag "release-$(date +'%Y%m%d-%H%M')-$(Build.SourceVersion)"
+                    git push --tags
+                  displayName: Tag release
